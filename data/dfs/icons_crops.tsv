@@ -1,0 +1,9 @@
+name	width	height	ratio	square	is_used
+ic_warning_48px.png	549	474	1.16	260226	False
+ic_error_48px.png	499	499	1.0	249001	False
+ic_warning_36px.png	567	483	1.17	273861	False
+ic_warning_18px.png	567	500	1.13	283500	False
+ic_error_outline_24px.png	499	499	1.0	249001	False
+ic_error_18px.png	533	533	1.0	284089	False
+ic_add_alert_24px.png	449	524	0.86	235276	False
+ic_error_outline_48px.png	499	499	1.0	249001	False
