@@ -1,0 +1,10 @@
+# base ----------------------------------------
+pandas
+numpy
+opencv-python
+Pillow
+tqdm
+
+# text-------------------------------------
+markovgen
+trdg
