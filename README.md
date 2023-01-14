@@ -1,4 +1,5 @@
-# Creation simple synthetic slides in pptx format.
+# Creation simple synthetic slides in pptx format
+**Works only on Windows with installed PowerPoint!**  
 
 <p align="center">
     <img src="examples.png", width="700px">
