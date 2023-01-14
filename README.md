@@ -1,4 +1,4 @@
-# Creation synthetic slides in jpg format.
+# Creation synthetic slides in jpg format
 
 <p align="center">
     <img src="examples.png", width="700px">
@@ -72,7 +72,7 @@ Dataframes for them should have the following format:
 * `icon` - a small graphic image-pictogram: house symbol, smiley, lightning, robot, etc. Most often, `icon` are drawn very simply, consisting of geometric shapes and lines of one to three colors. As a rule, the `icon` is associated with some text on the slide, visualizing its theme, but there are also just separately located icons on the background, sometimes the text is also found inside the `icon` itself
 * `person` - the face of the person in the photograph, rotated at such an angle that the person's identity can be identified. `person` is highlighted by a bbox that outlines the person’s face from the top of the head to the chin
 
-As a result of generation, folder *output_generation* will contain the resulting synthetic slides and its text files with yolo-markup, folder *output_visualization* - the same slides, but with rendered bboxes.
+As a result of generation, folder *output_generation* will contain the resulting synthetic slides and its text files for slide components detection with yolo-markup, folder *output_visualization* - the same slides, but with rendered bboxes.
 
 ### Data description
 
