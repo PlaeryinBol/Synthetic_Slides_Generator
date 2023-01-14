@@ -14,7 +14,7 @@ import config
 import utils
 
 
-def generation():
+def generation(markov_text, fonts, backgrounds):
     # create an intermediate presentation, from which we will receive the coordinates of the bboxes, and the final
     prs, slide = utils.make_prs(config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
     final_prs, final_slide = utils.make_prs(config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
@@ -32,7 +32,7 @@ def generation():
         background_fill.solid()
         background_fill.fore_color.rgb = RGBColor(*utils.get_random_color())
     elif type_of_background < config.COLOUR_BACKGROUND_PROB + config.PICTURE_BACKGROUND_PROB:
-        background_image = random.sample(BACKGROUNDS_LIST, 1)[0]
+        background_image = random.sample(backgrounds, 1)[0]
         pic = final_slide.shapes.add_picture(background_image, left=Pt(0), top=Pt(0),
                                              height=Pt(config.SLIDE_HEIGHT), width=Pt(config.SLIDE_WIDTH))
 
@@ -41,14 +41,14 @@ def generation():
 
     # randomly initialize parameters for all content_titles on a slide
     content_titles_color = RGBColor(*utils.get_simple_random_color())
-    content_titles_font = random.sample(FONTS, 1)[0][0]
+    content_titles_font = random.sample(fonts, 1)[0][0]
     content_titles_font_size = random.randint(config.MIN_STRING_SIZE, config.MAX_STRING_SIZE)
     bold_content_titles = True if random.random() < config.CONTENT_TITLE_BOLD_PROB else False
     upper_content_titles = True if random.random() < config.CONTENT_TITLE_UPPER_PROB else False
 
     # randomly initialize the parameters for all bullets on the slide
     bullets_color = RGBColor(*utils.get_random_color())
-    bullets_font = random.sample(FONTS, 1)[0][0]
+    bullets_font = random.sample(fonts, 1)[0][0]
     bullets_font_size = min(content_titles_font_size, random.randint(config.MIN_STRING_SIZE, config.MAX_STRING_SIZE))
     bold_bullets = True if random.random() < config.BULLET_BOLD_PROB and bold_content_titles else False
     upper_bullets = True if random.random() < config.BULLET_UPPER_PROB and upper_content_titles else False
@@ -205,4 +205,4 @@ if __name__ == "__main__":
 
     BACKGROUNDS_LIST = utils.get_pictures(config.BACKGROUNDS_DIR)  # creating a list of backgrounds to sample from it
     for _ in tqdm(range(config.PPTX_COUNT)):
-        generation()
+        generation(markov_text, FONTS, BACKGROUNDS_LIST)
