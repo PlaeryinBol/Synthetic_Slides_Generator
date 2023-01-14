@@ -1,348 +1,208 @@
+import math
 import os
 import random
+import secrets
 
-import cv2
 import numpy as np
-import pandas as pd
+import win32com.client
+from pptx.dml.color import RGBColor
+from pptx.text.fonts import FontFiles
+from pptx.util import Pt
+from tqdm import tqdm
 
 import config
 import utils
 
-markov_text = utils.generate_random_text(config.TEXT_DONOR, config.TEXT_SAMPLES)
 
-# loading visual classes dataframes
-tables_df = pd.read_csv(config.TABLES_DF, sep='\t')
-clear_images_df = pd.read_csv(config.CLEAR_IMAGES_DF, sep='\t')
-text_images_df = pd.read_csv(config.TEXT_IMAGES_DF, sep='\t')
-diagrams_df = pd.read_csv(config.DIAGRAMS_DF, sep='\t')
-schemes_df = pd.read_csv(config.SCHEMES_DF, sep='\t')
-logos_df = pd.read_csv(config.LOGOS_DF, sep='\t')
-icons_df = pd.read_csv(config.ICONS_DF, sep='\t')
+def generation():
+    # create an intermediate presentation, from which we will receive the coordinates of the bboxes, and the final
+    prs, slide = utils.make_prs(config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
+    final_prs, final_slide = utils.make_prs(config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
+    # generate a unique name for the sample
+    unic_name = secrets.token_hex(nbytes=16)
+    prs_path = os.path.join(config.TEMP_DIR, 'temp.pptx')
+    final_prs_path = os.path.join(config.OUTPUT_DIR, 'synthpptx_' + unic_name + '.pptx')
+    screenshot_path = os.path.join(config.TEMP_DIR, 'temp.jpg')
+    txt_path = os.path.join(config.OUTPUT_DIR, 'synthpptx_' + unic_name + '.txt')
 
-# if necessary, we can set all already used visuals in dataframes as unused
-if config.RESET_DFS:
-    tables_df['is_used'] = False
-    clear_images_df['is_used'] = False
-    text_images_df['is_used'] = False
-    diagrams_df['is_used'] = False
-    schemes_df['is_used'] = False
-    logos_df['is_used'] = False
-    icons_df['is_used'] = False
+    type_of_background = random.random()
+    # randomly insert a color or picture background, or leave the default white
+    if type_of_background < config.COLOUR_BACKGROUND_PROB:
+        background_fill = final_slide.background.fill
+        background_fill.solid()
+        background_fill.fore_color.rgb = RGBColor(*utils.get_random_color())
+    elif type_of_background < config.COLOUR_BACKGROUND_PROB + config.PICTURE_BACKGROUND_PROB:
+        background_image = random.sample(BACKGROUNDS_LIST, 1)[0]
+        pic = final_slide.shapes.add_picture(background_image, left=Pt(0), top=Pt(0),
+                                             height=Pt(config.SLIDE_HEIGHT), width=Pt(config.SLIDE_WIDTH))
 
-dataset_samples = utils.get_pictures(config.DATASET_DIR)
-while len(os.listdir(config.OUTPUT_VISUALIZATION_DIR)) < config.SLIDES_COUNT:
-    imagename = random.choice(dataset_samples)
-    config.LOG.info(imagename)
-    try:
-        image = cv2.imread(imagename)
-        width = image.shape[1]
-        height = image.shape[0]
-        # read markup from dataset
-        txt_path = imagename[:-4] + ".txt"
-        with open(txt_path, "r") as f:
-            lines = f.readlines()
-            array = []
-            lines_to_del = set()
-            for idx, line in enumerate(lines):
-                line = line.replace('\n', '').split(' ')
-                label = int(line[0])
+    # randomly initialize line spacing for all text on a slide
+    random_margin_after_lines = random.randint(0, config.MAX_MARGIN_AFTER_LINES)
 
-                x1, y1, x2, y2 = utils.yolo2tlrb(float(line[1]), float(line[2]), float(line[3]),
-                                                 float(line[4]), width, height)
-                x1 = max(0, x1)
-                y1 = max(0, y1)
-                x2 = max(0, x2)
-                y2 = max(0, y2)
+    # randomly initialize parameters for all content_titles on a slide
+    content_titles_color = RGBColor(*utils.get_simple_random_color())
+    content_titles_font = random.sample(FONTS, 1)[0][0]
+    content_titles_font_size = random.randint(config.MIN_STRING_SIZE, config.MAX_STRING_SIZE)
+    bold_content_titles = True if random.random() < config.CONTENT_TITLE_BOLD_PROB else False
+    upper_content_titles = True if random.random() < config.CONTENT_TITLE_UPPER_PROB else False
 
-                color = config.LABELS_TO_COLORS[config.ALL_CLASSES[label]]
-                image = cv2.rectangle(image, (x1, y1), (x2, y2), color, 2)
-                cv2.putText(image, config.ALL_CLASSES[label], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 0, 0), 1)
+    # randomly initialize the parameters for all bullets on the slide
+    bullets_color = RGBColor(*utils.get_random_color())
+    bullets_font = random.sample(FONTS, 1)[0][0]
+    bullets_font_size = min(content_titles_font_size, random.randint(config.MIN_STRING_SIZE, config.MAX_STRING_SIZE))
+    bold_bullets = True if random.random() < config.BULLET_BOLD_PROB and bold_content_titles else False
+    upper_bullets = True if random.random() < config.BULLET_UPPER_PROB and upper_content_titles else False
 
-                # do not take bboxes with zero height/width and bboxes that go beyond the borders
-                if (x2 - x1 > 0) and (y2 - y1 > 0):
-                    # in the case of media classes, we can replace it with some random other
-                    if label in config.MEDIA_CLASSES:
-                        # but before that we check that table, scheme or diagram does not turn out to be too small
-                        if ((x2 - x1) / width > config.MIN_MEDIA_WIDTH_COEFF) \
-                                and ((y2 - y1) / height > config.MIN_MEDIA_HEIGHT_COEFF):
-                            label = random.sample(config.MEDIA_CLASSES, 1)[0]
-                        else:
-                            label = 5
+    # randomly initialize the number of content_blocks on the slide and the vertical distance between them
+    block_count = random.randint(config.MIN_BLOCK_COUNT, config.MAX_BLOCK_COUNT)
+    blocks_vertical_gap = random.randint(0, content_titles_font_size + random_margin_after_lines)
 
-                        lines[idx] = str(label) + lines[idx][1:]
-                    array.append([min(x1, width), min(y1, height), min(x2, width), min(y2, height), label])
-                else:
-                    lines_to_del.add(idx)
+    # randomly initialize distances between content_title and bullets
+    vertical_class_gap = random.randint(-random_margin_after_lines, random_margin_after_lines)
+    horizontal_class_gap = config.HORIZONTAL_CLASS_GAP_COEFF * random.randint(-random_margin_after_lines,
+                                                                              random_margin_after_lines)
+    # randomly initialize the interval between adjacent bullets for all bullets on the slide
+    bullets_gap = random.randint(2 * random_margin_after_lines,
+                                 max(2 * random_margin_after_lines, math.ceil(bullets_font_size / 2)))
 
-        # do not write incorrect bboxes in yolo-textfile
-        lines = [el for i, el in enumerate(lines) if i not in lines_to_del]
-        array = np.array(array)
-        # if there is something on the slide besides the background
-        if array.size != 0:
-            classes = array[:, -1]
+    slide_array = []
+    for b, block in enumerate(range(block_count)):
+        # for the first block, select a suitable random point in the upper half of the slide
+        if b == 0:
+            content_title_left = random.randint(0, config.SLIDE_WIDTH - 1050)
+            content_title_top = random.randint(150, config.SLIDE_HEIGHT - 600)
+        else:
+            content_title_top = bullet_bbox[3] + blocks_vertical_gap
 
-            # delete persons as unnecessary
-            person_to_del = np.where(array[:, -1] == 11)[0]
-            array = np.delete(array, person_to_del, 0)
+        # samples a list of a random number of lines with random text
+        content_titles_lines = random.randint(1, config.MAX_CONTENT_TITLE_LINES)
+        content_titles_text = utils.gen_text(markov_text, content_titles_lines, config.MIN_WORDS,
+                                             config.MAX_WORDS, upper_content_titles)
 
-            # too small slides are enlarged by 2 times
-            if width <= 600:
-                image = utils.image_resize(image, width=width*2)
-                width = image.shape[1]
-                height = image.shape[0]
-                array[:, :-1] *= 2
+        # randomly add a colon at the end of the content_title
+        if random.random() < config.CONTENT_TITLE_COLON_PROB:
+            content_titles_text[-1] += ':'
 
-            type_of_background = random.random()
-            background = np.ones_like(image)
-            # choose a white, color or picture slide background
-            if type_of_background < config.COLOUR_BACKGROUND_PROB:
-                background[:, :, 0] *= random.randint(0, 255)
-                background[:, :, 1] *= random.randint(0, 255)
-                background[:, :, 2] *= random.randint(0, 255)
-            elif type_of_background < config.COLOUR_BACKGROUND_PROB + config.PICTURE_BACKGROUND_PROB:
-                coords = np.array([[0, 0, width, height, 5]])
-                background, new_clear_images_df = utils.add_media(background, coords, clear_images_df,
-                                                                  5, config.CLEAR_IMAGES_FOLDER)
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, background image not found!')
-                    continue
-                if new_clear_images_df is None:
-                    config.LOG.warning('empty dataframe, background image not found!')
-                    clear_images_df['is_used'] = False
-                    continue
-                else:
-                    clear_images_df = new_clear_images_df
+        # sequentially insert content_title lines on the intermediate and final slide
+        for t, text_line in enumerate(content_titles_text):
+            utils.add_textbox(slide, content_title_left, content_title_top,
+                              config.TEXT_SHAPE_WIDTH, config.TEXT_SHAPE_HEIGHT, content_titles_font,
+                              content_titles_font_size, content_titles_color, text_line, bold_content_titles)
+            utils.add_textbox(final_slide, content_title_left, content_title_top,
+                              config.TEXT_SHAPE_WIDTH, config.TEXT_SHAPE_HEIGHT, content_titles_font,
+                              content_titles_font_size, content_titles_color, text_line, bold_content_titles)
+            content_title_top += content_titles_font_size + random_margin_after_lines
+
+        # save the intermediate presentation and its screenshot
+        prs.save(prs_path)
+        pres = PptApp.Presentations.Open(prs_path)
+        pres.Slides[0].Export(screenshot_path, "JPG")
+        pres.close()
+
+        # calculate the coordinates of the content_title bbox, add them to the general array of coordinates
+        content_title_bbox, screenshot = utils.get_bbox(screenshot_path, config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
+        content_title_bbox.append(1)
+        slide_array.append(content_title_bbox)
+
+        # make alltext on the intermediate slide white
+        # so that it does not interfere with further calculation of coordinates
+        for sh in slide.shapes:
+            sh.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
+
+        # create a content_block with coordinates of its content_title (later we will expand the block)
+        block_bbox = content_title_bbox[:-1]
+        block_bbox.append(2)
+
+        # randomly initialize the number of bullets in the current block
+        bullets_count = random.randint(1, config.MAX_BULLET_COUNT)
+        for j, bullet in enumerate(range(bullets_count)):
+            # move the first bullet in the block from the content_title to the vertical_class_gap distance
+            if j == 0:
+                bullet_left = content_title_bbox[0] + horizontal_class_gap
+                bullet_top = content_title_bbox[3] + vertical_class_gap
             else:
-                background *= 255
+                bullet_top = bullet_bbox[3] + bullets_gap
 
-            # tables
-            if (len(classes[classes == 4]) > 0):
-                background, new_tables_df = utils.add_media(background, array, tables_df, 4, config.TABLES_FOLDER)
-                # if no crop was found with a suitable height / width ratio for the donor bbox
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, table not found!')
-                    continue
-                # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                if new_tables_df is None:
-                    config.LOG.warning('empty dataframe, table not found!')
-                    tables_df['is_used'] = False
-                    continue
-                else:
-                    tables_df = new_tables_df
+            # samples a list of a random number of lines with random text
+            bullets_lines = random.randint(1, config.MAX_BULLET_LINES)
+            bullets_text = utils.gen_text(markov_text, bullets_lines, config.MIN_WORDS, config.MAX_WORDS, upper_bullets)
 
-            # images
-            if (len(classes[classes == 5]) > 0):
-                # decide whether to insert text or non text pictures on the background
-                if random.random() > config.TEXT_IMAGES_PROBS:
-                    background, new_clear_images_df = utils.add_media(background, array, clear_images_df,
-                                                                      5, config.CLEAR_IMAGES_FOLDER)
-                    # if no crop was found with a suitable height / width ratio for the donor bbox
-                    if background is None:
-                        config.LOG.warning(f'bad {os.path.basename(imagename)} slide, image not found!')
-                        continue
-                    # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                    if new_clear_images_df is None:
-                        config.LOG.warning('empty dataframe, image not found!')
-                        clear_images_df['is_used'] = False
-                        continue
-                    else:
-                        clear_images_df = new_clear_images_df
-                else:
-                    background, new_text_images_df = utils.add_media(background, array, text_images_df,
-                                                                     5, config.TEXT_IMAGES_FOLDER)
-                    # if no crop was found with a suitable height / width ratio for the donor bbox
-                    if background is None:
-                        config.LOG.warning(f'bad {os.path.basename(imagename)} slide, text image not found!')
-                        continue
-                    # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                    if new_text_images_df is None:
-                        config.LOG.warning('empty dataframe, text image not found!')
-                        text_images_df['is_used'] = False
-                        continue
-                    else:
-                        text_images_df = new_text_images_df
+            # randomly add a red line at the beginning of the bullet
+            if random.random() < config.RED_LINE_PROB:
+                bullets_text[0] = '    ' + bullets_text[0][:-4]
 
-            # diagrams
-            if (len(classes[classes == 6]) > 0):
-                background, new_diagrams_df = utils.add_media(background, array, diagrams_df,
-                                                              6, config.DIAGRAMS_FOLDER)
-                # if no crop was found with a suitable height / width ratio for the donor bbox
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, diagram not found!')
-                    continue
-                # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                if new_diagrams_df is None:
-                    config.LOG.warning('empty dataframe, diagram not found!')
-                    diagrams_df['is_used'] = False
-                    continue
-                else:
-                    diagrams_df = new_diagrams_df
+            # sequentially insert the lines of the bullet on the intermediate and final slide
+            for t, text_line in enumerate(bullets_text):
+                utils.add_textbox(slide, bullet_left, bullet_top,
+                                  config.TEXT_SHAPE_WIDTH, config.TEXT_SHAPE_HEIGHT, bullets_font,
+                                  bullets_font_size, bullets_color, text_line, bold_bullets)
+            utils.add_textbox(final_slide, bullet_left, bullet_top,
+                              config.TEXT_SHAPE_WIDTH, config.TEXT_SHAPE_HEIGHT, bullets_font,
+                              bullets_font_size, bullets_color, text_line, bold_bullets)
+            bullet_top += bullets_font_size + random_margin_after_lines
 
-            # schemes
-            if (len(classes[classes == 7]) > 0):
-                background, new_schemes_df = utils.add_media(background, array, schemes_df,
-                                                             7, config.SCHEMES_FOLDER)
-                # if no crop was found with a suitable height / width ratio for the donor bbox
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, scheme not found!')
-                    continue
-                # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                if new_schemes_df is None:
-                    config.LOG.warning('empty dataframe, scheme not found!')
-                    schemes_df['is_used'] = False
-                    continue
-                else:
-                    schemes_df = new_schemes_df
+            # save the intermediate presentation and its screenshot
+            prs.save(prs_path)
+            pres = PptApp.Presentations.Open(prs_path)
+            pres.Slides[0].Export(screenshot_path, "JPG")
+            pres.close()
 
-            # logos
-            if (len(classes[classes == 8]) > 0):
-                background, new_logos_df = utils.add_logo_or_icon(background, array, logos_df,
-                                                                  8, config.LOGOS_FOLDER)
-                # if no crop was found with a suitable height / width ratio for the donor bbox
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, logo not found!')
-                    continue
-                # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                if new_logos_df is None:
-                    config.LOG.warning('empty dataframe, logo not found!')
-                    logos_df['is_used'] = False
-                    continue
-                else:
-                    logos_df = new_logos_df
+            # calculate the coordinates of the bbox bullet, add them to the general array of coordinates
+            bullet_bbox, screenshot = utils.get_bbox(screenshot_path, config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
+            bullet_bbox.append(3)
+            slide_array.append(bullet_bbox)
 
-            # icons
-            if (len(classes[classes == 10]) > 0):
-                background, new_icons_df = utils.add_logo_or_icon(background, array, icons_df,
-                                                                  10, config.ICONS_FOLDER)
-                # if no crop was found with a suitable height / width ratio for the donor bbox
-                if background is None:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide, icon not found!')
-                    continue
-                # if in the dataframe there are only either already used or too small crops for the bbox-donor
-                if new_icons_df is None:
-                    config.LOG.warning('empty dataframe, icon not found!')
-                    icons_df['is_used'] = False
-                    continue
-                else:
-                    icons_df = new_icons_df
+            # make alltext on the intermediate slide white
+            # so that it does not interfere with further calculation of coordinates
+            for sh in slide.shapes:
+                sh.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
 
-            good_gen = np.copy(background)
+            # update the coordinates of the current content_block
+            block_bbox = [min(block_bbox[0], bullet_bbox[0]), min(block_bbox[1], bullet_bbox[1]),
+                          max(block_bbox[2], bullet_bbox[2]), max(block_bbox[3], bullet_bbox[3]), 2]
 
-            # text classes
-            if any(np.isin(config.TEXT_CLASSES, classes)):
-                bad_try = False
-                try_count = 0
-                # trying to generate adequate text several attempts
-                while try_count < config.MAX_TRY:
-                    background = good_gen
+        # add the current content block to the general array
+        slide_array.append(block_bbox)
 
-                    # slide_title
-                    if (len(classes[classes == 0]) > 0):
-                        background, slide_title_lines_height = utils.slide_titles_generator(background, array,
-                                                                                            width, height,
-                                                                                            config.REGULAR_FONTS,
-                                                                                            config.BOLD_FONTS,
-                                                                                            markov_text)
-                    else:
-                        slide_title_lines_height = config.MAX_CONTENT_TITLE_HEIGHT
-                    # if the attempt to generate elements of this class is unsuccessful,
-                    # then the general attempt to generate the text of the slide is also unsuccessful
-                    if not slide_title_lines_height:
-                        config.LOG.warning('Max slide title attempts!')
-                        bad_try = True
+        # make alltext on the intermediate slide white
+        # so that it does not interfere with further calculation of coordinates
+        for sh in slide.shapes:
+            sh.text_frame.paragraphs[0].font.color.rgb = RGBColor(255, 255, 255)
 
-                    # content_titles
-                    if (len(classes[classes == 1]) > 0) and not bad_try:
-                        background, content_title_lines_height = utils.content_titles_generator(background, array,
-                                                                                                width, height,
-                                                                                                config.SIMPLE_REGULAR_FONTS,
-                                                                                                config.SIMPLE_BOLD_FONTS,
-                                                                                                markov_text,
-                                                                                                slide_title_lines_height)
-                    else:
-                        content_title_lines_height = min(slide_title_lines_height, config.MAX_BULLET_HEIGHT)
-                    # if the attempt to generate elements of this class is unsuccessful,
-                    # then the general attempt to generate the text of the slide is also unsuccessful
-                    if not content_title_lines_height:
-                        config.LOG.warning('Max content title attempts!')
-                        bad_try = True
+    # remove possible bboxes outside the slide -
+    # they have coordinates [SLIDE_WIDTH*SLIDE_HEIGHT, SLIDE_WIDTH*SLIDE_HEIGHT, 0, 0])
+    slide_array = [row for row in slide_array if config.SLIDE_WIDTH*config.SLIDE_HEIGHT not in row]
 
-                    # bullets
-                    if (len(classes[classes == 3]) > 0) and not bad_try:
-                        background, bullet_lines_height = utils.bullets_generator(background, array,
-                                                                                  width, height,
-                                                                                  config.REGULAR_FONTS,
-                                                                                  config.BOLD_FONTS,
-                                                                                  markov_text,
-                                                                                  content_title_lines_height,
-                                                                                  max_bullet_lines=6)
-                    else:
-                        bullet_lines_height = min(content_title_lines_height, config.MAX_NOTE_HEIGHT)
-                    # if the attempt to generate elements of this class is unsuccessful,
-                    # then the general attempt to generate the text of the slide is also unsuccessful
-                    if not bullet_lines_height:
-                        config.LOG.warning('Max bullet attempts!')
-                        bad_try = True
+    # calculate and add a block for content_blocks to a common array
+    slide_array = np.array(slide_array)
+    general_bbox = [np.min(slide_array[:, 0]), np.min(slide_array[:, 1]),
+                    np.max(slide_array[:, 2]), np.max(slide_array[:, 3]), 2]
+    slide_array = np.append(slide_array, [general_bbox], axis=0)
 
-                    # notes
-                    if (len(classes[classes == 9]) > 0) and not bad_try:
-                        background, note_lines_height = utils.notes_generator(background, array,
-                                                                              width, height,
-                                                                              config.REGULAR_FONTS,
-                                                                              config.BOLD_FONTS,
-                                                                              markov_text, bullet_lines_height)
-                        # if the attempt to generate elements of this class is unsuccessful,
-                        # then the general attempt to generate the text of the slide is also unsuccessful
-                        if not note_lines_height:
-                            config.LOG.warning('Max note attempts!')
-                            bad_try = True
+    # save the markup and the final slide
+    utils.save_txt(txt_path, slide_array, config.SLIDE_WIDTH, config.SLIDE_HEIGHT)
+    final_prs.save(final_prs_path)
 
-                    # if the attempt is successful, stop
-                    if (try_count < config.MAX_TRY) and not bad_try:
-                        config.LOG.info('Well done text!')
-                        break
+    # save a screenshot of the final presentation
+    pres = PptApp.Presentations.Open(final_prs_path)
+    pres.Slides[0].Export(final_prs_path[:-4] + 'jpg', "JPG")
+    pres.close()
 
-                    try_count += 1
-                    bad_try = False
-
-                # if there are too many attempts, go to the next donor slide
-                if try_count == config.MAX_TRY:
-                    config.LOG.warning(f'bad {os.path.basename(imagename)} slide')
-                    continue
-                else:
-                    visualization = utils.draw_visualization(background, array)
-                    utils.gen_save(imagename, background, visualization, lines)
-                    config.LOG.info('good text slide')
-
-            else:
-                visualization = utils.draw_visualization(background, array)
-                utils.gen_save(imagename, background, visualization, lines)
-                config.LOG.info('good not text slide')
-
-        config.LOG.info('-'*27)
-    # if we manually interrupt generation, then we save dataframes so as not to lose information about visuals used
-    except KeyboardInterrupt:
-        tables_df.to_csv(config.TABLES_DF, sep='\t', index=False)
-        clear_images_df.to_csv(os.path.join(config.ROOT_DIR, 'clear_images.tsv'), sep='\t', index=False)
-        text_images_df.to_csv(os.path.join(config.ROOT_DIR, 'text_images.tsv'), sep='\t', index=False)
-        diagrams_df.to_csv(os.path.join(config.ROOT_DIR, 'diagrams_crops.tsv'), sep='\t', index=False)
-        schemes_df.to_csv(os.path.join(config.ROOT_DIR, 'schemes_crops.tsv'), sep='\t', index=False)
-        logos_df.to_csv(os.path.join(config.ROOT_DIR, 'logos_crops.tsv'), sep='\t', index=False)
-        icons_df.to_csv(os.path.join(config.ROOT_DIR, 'icons_crops.tsv'), sep='\t', index=False)
-        config.LOG.info('dataframes saved')
-        break
-    # except Exception as e:
-        # config.LOG.error(e)
-    #     continue
+    # draw bbox visualization over the last screenshot (only for check final bboxes quality)
+    visualization = utils.draw_visualization(screenshot, slide_array)
 
     # break
 
-# at the end of the generation, resave the dataframes
-tables_df.to_csv(config.TABLES_DF, sep='\t', index=False)
-clear_images_df.to_csv(os.path.join(config.ROOT_DIR, 'clear_images.tsv'), sep='\t', index=False)
-text_images_df.to_csv(os.path.join(config.ROOT_DIR, 'text_images.tsv'), sep='\t', index=False)
-diagrams_df.to_csv(os.path.join(config.ROOT_DIR, 'diagrams_crops.tsv'), sep='\t', index=False)
-schemes_df.to_csv(os.path.join(config.ROOT_DIR, 'schemes_crops.tsv'), sep='\t', index=False)
-logos_df.to_csv(os.path.join(config.ROOT_DIR, 'logos_crops.tsv'), sep='\t', index=False)
-icons_df.to_csv(os.path.join(config.ROOT_DIR, 'icons_crops.tsv'), sep='\t', index=False)
-config.LOG.info('dataframes saved')
+
+if __name__ == "__main__":
+    markov_text = utils.generate_random_text(config.TEXT_DONOR, config.TEXT_SAMPLES)
+
+    # load client for screenshotting slides
+    PptApp = win32com.client.Dispatch("Powerpoint.Application")
+    PptApp.Visible = True
+
+    FONTS = [f for f in list(FontFiles._installed_fonts()) if f[0] not in config.BAD_FONTS]  # loading installed fonts
+
+    BACKGROUNDS_LIST = utils.get_pictures(config.BACKGROUNDS_DIR)  # creating a list of backgrounds to sample from it
+    for _ in tqdm(range(config.PPTX_COUNT)):
+        generation()

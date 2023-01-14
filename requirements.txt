@@ -1,10 +1,10 @@
 # base ----------------------------------------
-pandas
 numpy
 opencv-python
 Pillow
 tqdm
+pywin32
+python-pptx
 
 # text-------------------------------------
 markovgen
-trdg
