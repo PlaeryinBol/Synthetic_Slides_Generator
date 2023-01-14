@@ -24,7 +24,7 @@ The contents of the *./data* folder should be presented as follows:
 * `content_block` - text or media elements combined by the author in one area of the slide. `content block` can often be nested: an obvious example is a nested list, in which one of the elements is itself a list \(and therefore a `content block`\)
 * `bullet` - a block of text that is logically and visually separated from other slide elements. The slide creators themselves visually separate the bullets from each other (as a rule, using a wider line spacing than usual). `bullet` can be both inside the `content block` and outside it
 
-As a result of generation, folder *output_generation* will contain the resulting synthetic pptx-slides, its jpg-screenshots and its text files with yolo-markup.
+As a result of generation, folder *output_generation* will contain the resulting synthetic pptx-slides, its jpg-screenshots and its text files with [yolo-format](https://github.com/AlexeyAB/Yolo_mark/issues/60#issuecomment-401854885) markup for slide components detection.
 
 ### Data description
 
@@ -32,15 +32,13 @@ When generating, the following approach is used: bbox coordinates are taken from
 
 1. **Backgrounds**
     * The backgrounds on the slides were randomly selected from three options: a white background, a random colored background, and a random picture (without text).
-2. **Layouts**
+2. **Layouts**  
     The following 3 types of templates were used by me:
     * a column of many content_blocks "`content_title` + one-line `bullet`".  
     * two "`content_title` + `bullet`" content_blocks, one in the top half of the slide, the other in the bottom.
     * a column of several content_blocks "`content_title` + several `bullet`".
 3. **Text**
-    * As a donor for the generation of random text I used my favorite books, combined into one text document.  
-    For text substitution, [markovgen](https://pypi.org/project/markovgen/) library was used: a set of text samples was generated from a text donor, then duplicate samples (and quote characters as unnecessary) were removed from them.
-    The text was rendered using [TextRecognitionDataGenerator](https://github.com/Belval/TextRecognitionDataGenerator) library, in particular the *GeneratorFromStrings* module.
+    * As a donor for the generation of random text I used my favorite books, combined into one text document.
 4. **Fonts**
     * Installed fonts.
 
