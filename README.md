@@ -1,4 +1,4 @@
-# Synthetic slide generator
+# Synthetic Slides Generator
 
 The repository contains code for generating synthetic *jpg* and *pptx* slides \(with markup for slide components detection\).  
 I use my own classes for labeling the elements of the slide and my own pictures for substitution on the synthetic slides, you can use your own.
